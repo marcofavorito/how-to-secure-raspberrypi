@@ -200,20 +200,64 @@ Test if the process is active:
 
 	/usr/local/bin/noip2 -S
 
-## Step 4: Install a Web Server
+## Step 4: Install a Web Server (Nginx)
+Run this command:
+
+	sudo apt-get install nginx php5-fpm php5-curl php5-gd php5-cli php5-mcrypt php5-mysql php-apc mysql-server
+	
+
 - Nginx
 
-		sudo apt-get install nginx
+	For enable/disable nginx at startup:
 		
-	Useful commands:
-	
 		sudo systemctl (disable|enable) nginx.service
+		
+	For start/stop/restart nginx service:
+	
 		sudo service nginx (start|stop|restart)
 
 	Configuration files in `/etc/nginx/`.
 	
+	Now we will modify some configuration file.
+	
+		sudo nano /etc/nginx/nginx.conf
+	
+	1. Inside the `http { … }` block we want to un-comment the `server_tokens off` line;
+
+		Enabling this line stops nginx from reporting which version it is to browsers; which helps to stop people from learning your nginx version and then Googling for exploits they might be able to use to hack you.
+	
+	2. Uncomment `#server_names_hash_bucket_size 64;`
+	[Details](https://gist.github.com/muhammadghazali/6c2b8c80d5528e3118613746e0041263).
+	
+	3. We'll also harden nginx against DDOS attacks. Add these lines inside the http block, just before the end bracket }:
+	
+			##
+			# Harden nginx against DDOS
+			##
+
+			client_header_timeout 10;
+			client_body_timeout   10;
+			keepalive_timeout     10 10;
+			send_timeout          10;
+	
+- Create `fastcgi_params`:
+
+		sudo nano /etc/nginx/fastcgi_params
+		
+	and make sure it is the same of as described [here](https://www.nginx.com/resources/wiki/start/topics/examples/phpfcgi/) (in particular, check the HTTPS line).
+	
+- MySQL configuration:
+
+		sudo mysql_secure_installation
+	
+	
+
+
 ## Step 5: Obtain a Digital Certificate
-[CertBot](https://certbot.eff.org/) is an easy-to-use automatic client that fetches and deploys SSL/TLS certificates for your webserver.
+
+### Certbot
+
+[Certbot](https://certbot.eff.org/) is an easy-to-use automatic client that fetches and deploys SSL/TLS certificates for your web server.
 We will use it for manage our new digital certificate, that we can use in many ways.
 
 First of all, you need to add [backports](https://backports.debian.org/Instructions/) to your `sources.list` file.
@@ -238,15 +282,109 @@ In order to renew the certificate, run:
 [Here](https://certbot.eff.org/docs/using.html#renewal) you will find details for the automatic renew.
 Now you can use the new `.pem` files e.g. for make the server establish HTTPS connections.
 
+### Integrate the digital certificate in your web server
+We will use `nginx` as before.
+For furhter details, we redirect [here](https://certbot.eff.org/docs/using.html#nginx).
+We got inspiration from [this guide](https://www.digitalocean.com/community/tutorials/how-to-create-an-ssl-certificate-on-nginx-for-ubuntu-14-04).
+
+Check that you have your certificates:
+
+	sudo ls -l /etc/letsencrypt/live/<your-domain-name>/
+	
+	
+Generate strong Diffie-Hellman Group. It takes a lot on a normal computer, an eternity on a little Raspberry Pi: I suggest you to run it on your computer and then copy the file to your server.
+
+	sudo openssl dhparam -out /etc/ssl/certs/dhparam.pem 2048
+
+Then, edit the following Nginx configuration file:
+
+	sudo nano sites-available/default
+
+Adding/uncommenting the following lines:
+
+	listen 443 ssl;
+
+	server_name example.com www.example.com;
+
+	ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
+	ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+
+To allow only the most secure protocols and ciphers, add the gollowing lines:
+
+	ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+        ssl_prefer_server_ciphers on;
+        ssl_dhparam /etc/ssl/certs/dhparam.pem;
+        ssl_ciphers 'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-DSS-AES128-GCM-SHA256:kEDH+AESGCM:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:AES:CAMELLIA:DES-CBC3-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!aECDH:!EDH-DSS-DES-CBC3-SHA:!EDH-RSA-DES-CBC3-SHA:!KRB5-DES-CBC3-SHA';
+        ssl_session_timeout 1d;
+        ssl_session_cache shared:SSL:50m;
+        ssl_stapling on;
+        ssl_stapling_verify on;
+        add_header Strict-Transport-Security max-age=15768000;
+
+Next, redirect HTTP requests to HTTPS requests:
+
+	server {
+	    listen 80;
+	    server_name example.com www.example.com;
+	    return 301 https://$host$request_uri;
+	}
+
+Test if there is some misconfiguration
+  
+  	sudo nginx -t
+
+If it is all ok, restart Nginx server:
+
+	sudo service nginx restart
+
+If you want, you can test your security typing this URL in your browser:
+
+	https://www.ssllabs.com/ssltest/analyze.html?d=example.com
+
+You should get an **A+**.
+
+## Keep your server updated
+
+Updating your server
+
+It's very important to keep you server updated. I get notification by email about new updates and perform them manually.
+
+To receive these notifications, get Apticron:
+
+	sudo apt-get install apticron
+
+Enter your email adres in the configuration file:
+
+	sudo nano /etc/apticron/apticron.conf
+
+Save and exit the file.
+
+Now you will receive emails with update notifications.
+
+To perform an update, just type:
+
+	sudo apt-get dist-upgrade
+
+
 ## Miscellanea
+### Configure locale settings
+It may happen that your locale are misconfigured: follow [this guide](https://askubuntu.com/questions/162391/how-do-i-fix-my-locale-issue) for solve it.
+In my case, it worked:
+
+	$ sudo locale-gen "en_US.UTF-8"
+	Generating locales...
+	  en_US.UTF-8... done
+	Generation complete.
+
+	$ sudo dpkg-reconfigure locales
+	Generating locales...
+	  en_US.UTF-8... up-to-date
+	Generation complete.
+	
 ### Disable unused services
 Installing `rcconf`, you can easily see all the available services and start/stop as you wish.
 
 ### Install additional software
-- cron-apt
-
-		sudo apt-get install cron-apt
-
 - iptables-persistent
 
 		sudo apt-get install iptables-persistent
@@ -262,15 +400,71 @@ Installing `rcconf`, you can easily see all the available services and start/sto
 		
 	Like you're logging with SSH.
 
+- Python
+Install `python3`:
+
+		sudo apt-get install python3
+		
+	Install `pip`:
+	
+		wget https://bootstrap.pypa.io/get-pip.py
+		sudo python3 get-pip.py
+	
+	For upgrade `pip`:
+		
+		sudo pip install -U pip
+		
+### Useful commands
+Some useful commands in terminal
+
+Updating the operating system
+
+	sudo apt-get update && sudo apt-get upgrade
+
+Updating the firmware
+
+	sudo rpi-update
+
+Secure copy local file to Pi
+
+	scp -r local-path username@IPADDRESS:remote-path
+
+Secure copy remote file to local directory
+
+	scp -r username@IPADDRESS:remote-path local-path
+
+Create bit by bit backup copy of SD Card
+
+	sudo dd if=/dev/mmcblk0 of=/data/backups/raspberryPiSDCardBackup.img
+
+Copy backup file from pi to local backup folder
+
+	scp -r username@IPADDRESS:/data/backups/raspberryPiSDCardBackup.img /users/username/documents/projects/backups
+
+Create SD Card with backup image:
+
+1. Go to terminal on Mac
+
+2. Insert Empty Formatted SD Card
+
+3. Run (use your own username, ipaddress, directory and diskname):
+
+		dd if=username@IPADDRESS:/data/backups/raspberryPiSDCardBackup.img of=/dev/disk2s1
+
+
+
 ## References
 
 - [What should be done to secure Raspberry Pi?](https://raspberrypi.stackexchange.com/questions/1247/what-should-be-done-to-secure-raspberry-pi) 
+- [Secure your server](https://www.linode.com/docs/security/securing-your-server/)
+- [Comprehensive guide on the same topic](https://www.pestmeester.nl/)
 - [Choose a secure password](http://www.wikihow.com/Create-a-Secure-Password)
 - [SSH configuration](https://help.ubuntu.com/community/SSH/OpenSSH/Configuring)
 - [SSH Public/Private keys](https://help.ubuntu.com/community/SSH/OpenSSH/Keys#Password_Authentication)
 - [Removing Unwanted Startup Debian Files or Services](https://theos.in/desktop-linux/removing-unwanted-startup-debian-files-or-services/)
 - [fail2ban Wiki](http://www.fail2ban.org/wiki/index.php/Main_Page)
 - [Tutorial on fail2ban](https://www.digitalocean.com/community/tutorials/how-to-protect-ssh-with-fail2ban-on-ubuntu-14-04)
+- [How fail2ban works](https://www.digitalocean.com/community/tutorials/how-fail2ban-works-to-protect-services-on-a-linux-server)
 - [Debianizzati tutorial on fail2ban (italian)](http://guide.debianizzati.org/index.php/Fail2ban)
 - [fail2ban for Apache](https://www.digitalocean.com/community/tutorials/how-to-protect-an-apache-server-with-fail2ban-on-ubuntu-14-04)
 - [fail2ban for Nginx](https://www.digitalocean.com/community/tutorials/how-to-protect-an-nginx-server-with-fail2ban-on-ubuntu-14-04)
