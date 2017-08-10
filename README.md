@@ -127,7 +127,7 @@ Now you can override all default configurations by removing comments and modifyi
 
 ## Step 3: Use a Dynamic DNS service
 Now we will set up a DDNS in order to allow a SSH connection from... Everywhere (almost)!
-In this guide, I will use [No-IP](https://www.noip.com/).
+In this guide, I will use [No-IP](https://www.noip.com/), and in the following I will assume that you already have an account and a configured domain name.
 I mainly followed this [tutorial](http://www.noip.com/support/knowledgebase/installing-the-linux-dynamic-update-client/) and [this one](https://www.howtoforge.com/how-to-install-no-ip2-on-ubuntu-12.04-lts-in-order-to-host-servers-on-a-dynamic-ip-address).
 Please, remember that before trying to access to the server from external networks, you need to configure your home router correctly (i.e. open external ports, define the port-forwarding rule etc.).
 
@@ -240,11 +240,58 @@ Run this command:
 			keepalive_timeout     10 10;
 			send_timeout          10;
 	
-- Create `fastcgi_params`:
+- Enable PHP (check [here](https://www.digitalocean.com/community/tutorials/how-to-install-linux-nginx-mysql-php-lemp-stack-on-ubuntu-12-04)):
 
-		sudo nano /etc/nginx/fastcgi_params
+	- Create `fastcgi_params`:
+
+			sudo nano /etc/nginx/fastcgi_params
 		
-	and make sure it is the same of as described [here](https://www.nginx.com/resources/wiki/start/topics/examples/phpfcgi/) (in particular, check the HTTPS line).
+		and make sure it is the same of as described [here](https://www.nginx.com/resources/wiki/start/topics/examples/phpfcgi/) (in particular, check the HTTPS line).
+	
+	- Configure PHP:
+	
+		 	sudo nano /etc/php5/fpm/php.ini
+ 		
+ 	- Find the line, cgi.fix_pathinfo=1, and change the 1 to 0.
+
+			cgi.fix_pathinfo=0
+
+		If this number is kept as 1, the php interpreter will do its best to process the file that is as near to the requested file as possible. This is a possible security risk. If this number is set to 0, conversely, the interpreter will only process the exact file path—a much safer alternative. Save and Exit. 
+	
+	- Open the php5-fpm file configuration,`www.conf`:
+
+			sudo nano /etc/php5/fpm/pool.d/www.conf
+
+	- Find the line, `listen = 127.0.0.1:9000`, and change the `127.0.0.1:9000` to `/var/run/php5-fpm.sock`.
+
+			listen = /var/run/php5-fpm.sock
+
+
+
+	- Restart php-fpm:
+
+		sudo service php5-fpm restart
+
+	- Open nginx configuration file `/etc/nginx/sites-available/yoursite` and replace the line block starting with `location ~ \.php` with:
+				
+				location ~ \.php$ {
+	                try_files $uri =404;
+	                fastcgi_pass unix:/var/run/php5-fpm.sock;
+	                fastcgi_index index.php;
+	                fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+	                include fastcgi_params;
+	                }
+
+	- In order to check if it is all OK, create a new file:
+		
+			sudo nano /var/www/html/info.php
+	
+		and put the following line:
+	
+			<?php phpinfo(); ?>
+
+	Now restart nginx and check that the server respond on the request of the page `info.php`.
+	You should remove that file, since it provides useful information for an attacker.
 	
 - MySQL configuration:
 
@@ -353,7 +400,7 @@ To receive these notifications, get Apticron:
 
 	sudo apt-get install apticron
 
-Enter your email adres in the configuration file:
+Enter your email address in the configuration file:
 
 	sudo nano /etc/apticron/apticron.conf
 
