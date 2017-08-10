@@ -15,7 +15,7 @@ Change `pi`'s password with:
 
     sudo passwd pi
         
-And typing the new password. Please, [choose a strong password... and remember it!!!](https://www.howtogeek.com/195430/how-to-create-a-strong-password-and-remember-it/)
+And type the new password. Please, [choose a strong password... and remember it!!!](https://www.howtogeek.com/195430/how-to-create-a-strong-password-and-remember-it/)
 
 ### Change default user
 This step is not mandatory, but usually it is a good idea to add a new user and disable `pi`, the default one.
