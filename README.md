@@ -307,9 +307,16 @@ Run this command:
 [Certbot](https://certbot.eff.org/) is an easy-to-use automatic client that fetches and deploys SSL/TLS certificates for your web server.
 We will use it for manage our new digital certificate, that we can use in many ways.
 
-First of all, you need to add [backports](https://backports.debian.org/Instructions/) to your `sources.list` file.
-	
+First of all, you need to add [backports](https://backports.debian.org/Instructions/) to your `/etc/apt/sources.list` file.
+Hence, open that file:
+
+    sudo nano /etc/apt/sources.list
+
+And add this line at the end of the file:
+    
 	deb http://ftp.debian.org/debian jessie-backports main
+
+	
 	sudo apt-get update
 	
 
